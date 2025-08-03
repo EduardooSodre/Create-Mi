@@ -12,13 +12,21 @@ export interface ImageEditRequest {
   size?: '1024x1024' | '1792x1024' | '1024x1792';
 }
 
+export interface ImageCombineRequest {
+  prompt: string;
+  images: { file: File; url: string; id: string }[];
+}
+
 export interface GeneratedImage {
   id: string;
   url: string;
   prompt: string;
   revisedPrompt?: string;
+  enhancedPrompt?: string;
   timestamp: number;
   isEdit?: boolean;
+  isCombination?: boolean;
+  sourceImageCount?: number;
   originalImage?: string;
 }
 
@@ -68,6 +76,34 @@ export async function editImage(request: ImageEditRequest): Promise<GeneratedIma
     return editedImage;
   } catch (error) {
     console.error('Erro ao editar imagem:', error);
+    throw error;
+  }
+}
+
+export async function combineImages(request: ImageCombineRequest): Promise<GeneratedImage> {
+  try {
+    const formData = new FormData();
+    formData.append('prompt', request.prompt);
+    
+    // Adicionar cada imagem ao FormData
+    request.images.forEach((image, index) => {
+      formData.append(`image_${index}`, image.file);
+    });
+
+    const response = await fetch('/api/combine-images', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erro ao combinar imagens');
+    }
+
+    const combinedImage = await response.json();
+    return combinedImage;
+  } catch (error) {
+    console.error('Erro ao combinar imagens:', error);
     throw error;
   }
 }

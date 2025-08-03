@@ -6,9 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Send, Sparkles, Image as ImageIcon, Loader2, Upload, Edit3, RotateCcw } from "lucide-react";
 import { ChatMessage, ChatMessage as ChatMessageComponent } from "./ChatMessage";
 import { ImageUpload } from "./ImageUpload";
+import { MultipleImageUpload } from "./MultipleImageUpload";
 import { ExamplePrompts } from "./ExamplePrompts";
-import { generateImage, editImage, downloadImage, GeneratedImage } from "@/lib/openai";
+import { generateImage, editImage, combineImages, downloadImage, GeneratedImage } from "@/lib/openai";
 import { chatStorage } from "@/lib/storage";
+
+interface UploadedImage {
+  file: File;
+  url: string;
+  id: string;
+}
 
 export function AIImageChat() {
   // Mensagem de boas-vindas padrão
@@ -24,6 +31,7 @@ export function AIImageChat() {
   const [inputValue, setInputValue] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<{ file: File; url: string } | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [mode, setMode] = useState<'create' | 'edit'>('create');
   const [enhancePrompt, setEnhancePrompt] = useState(false);
   const [hasStoredMessages, setHasStoredMessages] = useState(false);
@@ -79,14 +87,15 @@ export function AIImageChat() {
         if (!inputValue.trim() || isGenerating) return;
 
         const userMessage = inputValue.trim();
-        const isEditMode = mode === 'edit' && uploadedImage;
+        const isEditMode = mode === 'edit' && (uploadedImage || uploadedImages.length > 0);
+        const hasMultipleImages = uploadedImages.length > 1;
         setInputValue("");
 
         // Adiciona mensagem do usuário
         addMessage({
             type: "user",
             content: isEditMode
-                ? `✏️ Editar imagem: ${userMessage}`
+                ? `✏️ ${hasMultipleImages ? 'Combinar/Editar imagens' : 'Editar imagem'}: ${userMessage}`
                 : userMessage,
         });
 
@@ -94,7 +103,9 @@ export function AIImageChat() {
         const loadingMessage = addMessage({
             type: "assistant",
             content: isEditMode
-                ? "🎨 Editando sua imagem... Aplicando as alterações solicitadas!"
+                ? hasMultipleImages
+                    ? "🔍 Analisando suas imagens com IA... Identificando elementos visuais e criando uma combinação profissional!"
+                    : "🎨 Editando sua imagem... Aplicando as alterações solicitadas!"
                 : "🎨 Criando sua imagem... Isso pode levar alguns segundos para garantir a melhor qualidade!",
         });
 
@@ -103,7 +114,18 @@ export function AIImageChat() {
         try {
             let result: GeneratedImage;
 
-            if (isEditMode && uploadedImage) {
+            if (isEditMode && hasMultipleImages) {
+                // Combina múltiplas imagens
+                result = await combineImages({
+                    prompt: userMessage,
+                    images: uploadedImages
+                });
+
+                // Limpa as imagens após combinação
+                uploadedImages.forEach(img => URL.revokeObjectURL(img.url));
+                setUploadedImages([]);
+                setMode('create');
+            } else if (isEditMode && uploadedImage) {
                 // Edita a imagem existente
                 result = await editImage({
                     prompt: userMessage,
@@ -112,6 +134,7 @@ export function AIImageChat() {
                 });
 
                 // Limpa a imagem após edição
+                URL.revokeObjectURL(uploadedImage.url);
                 setUploadedImage(null);
                 setMode('create');
             } else {
@@ -132,7 +155,9 @@ export function AIImageChat() {
             addMessage({
                 type: "assistant",
                 content: isEditMode
-                    ? "✨ Imagem editada com sucesso! Confira o resultado:"
+                    ? hasMultipleImages
+                        ? "✨ Análise visual concluída! Suas imagens foram analisadas por IA e combinadas profissionalmente. Confira o resultado:"
+                        : "✨ Imagem editada com sucesso! Confira o resultado:"
                     : "✨ Imagem criada com sucesso! Que tal essa criação?",
             });
 
@@ -231,9 +256,66 @@ export function AIImageChat() {
         });
     };
 
+    // Funções para múltiplas imagens
+    const handleMultipleImagesUpload = (images: UploadedImage[]) => {
+        setUploadedImages(images);
+        setUploadedImage(null); // Limpar imagem única se houver
+        setMode('edit');
+
+        if (images.length === 1) {
+            addMessage({
+                type: "assistant",
+                content: `📷 Imagem "${images[0].file.name}" carregada! Agora me diga como você quer que eu a edite.`,
+            });
+        } else {
+            addMessage({
+                type: "assistant",
+                content: `� ${images.length} imagens carregadas! O sistema analisará visualmente cada imagem usando IA para entender seu conteúdo, e então criará uma combinação profissional baseada na sua descrição.\n\nExemplos de comandos:\n• "Combinar essas imagens em uma composição artística"\n• "Colocar a pessoa da primeira foto no cenário da segunda"\n• "Criar um collage profissional com essas imagens"\n• "Mesclar os elementos principais em uma cena única"`,
+            });
+        }
+    };
+
+    const handleRemoveMultipleImage = (id: string) => {
+        const updatedImages = uploadedImages.filter(img => {
+            if (img.id === id) {
+                URL.revokeObjectURL(img.url);
+                return false;
+            }
+            return true;
+        });
+        
+        setUploadedImages(updatedImages);
+        
+        if (updatedImages.length === 0) {
+            setMode('create');
+            addMessage({
+                type: "assistant",
+                content: "🗑️ Todas as imagens foram removidas. Agora você pode criar uma nova imagem ou fazer upload de outras para editar.",
+            });
+        } else {
+            addMessage({
+                type: "assistant",
+                content: `🗑️ Imagem removida. Ainda há ${updatedImages.length} imagem(ns) para editar.`,
+            });
+        }
+    };
+
     const toggleMode = () => {
-        if (mode === 'edit' && uploadedImage) {
-            handleRemoveImage();
+        if (mode === 'edit' && (uploadedImage || uploadedImages.length > 0)) {
+            // Limpar todas as imagens
+            if (uploadedImage) {
+                URL.revokeObjectURL(uploadedImage.url);
+            }
+            uploadedImages.forEach(img => URL.revokeObjectURL(img.url));
+            
+            setUploadedImage(null);
+            setUploadedImages([]);
+            setMode('create');
+            
+            addMessage({
+                type: "assistant",
+                content: "🔄 Mudando para modo criação. Todas as imagens foram removidas.",
+            });
         } else {
             setMode(mode === 'create' ? 'edit' : 'create');
         }
@@ -251,9 +333,16 @@ export function AIImageChat() {
       // Limpar localStorage
       chatStorage.clearMessages();
       
+      // Limpar URLs das imagens para evitar memory leaks
+      uploadedImages.forEach(img => URL.revokeObjectURL(img.url));
+      if (uploadedImage) {
+        URL.revokeObjectURL(uploadedImage.url);
+      }
+      
       // Resetar estado para mensagem de boas-vindas
       setMessages([getWelcomeMessage()]);
       setUploadedImage(null);
+      setUploadedImages([]);
       setMode('create');
       setInputValue('');
       setHasStoredMessages(false);
@@ -347,20 +436,64 @@ export function AIImageChat() {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t bg-background/50 backdrop-blur space-y-3 flex-shrink-0">
+      <div className="p-2 border-t bg-background/50 backdrop-blur space-y-1 flex-shrink-0">
         {/* Upload Area - Só mostra no modo edit */}
         {mode === 'edit' && (
-          <div className="border rounded-lg p-3 bg-muted/20">
-            <div className="flex items-center gap-2 mb-2">
-              <Upload className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">Upload de Imagem para Edição</span>
+          <div className="border rounded p-1 bg-muted/20">
+            <div className="flex items-center gap-1 mb-1">
+              <Upload className="h-3 w-3 text-primary" />
+              <span className="text-xs font-medium">Upload para Edição/Combinação</span>
             </div>
-            <ImageUpload
-              onImageUpload={handleImageUpload}
-              uploadedImage={uploadedImage}
-              onRemoveImage={handleRemoveImage}
-              disabled={isGenerating}
-            />
+            
+            {/* Toggles para escolher entre upload único ou múltiplo */}
+            <div className="flex gap-1 mb-1">
+              <Button
+                type="button"
+                variant={!uploadedImages.length && uploadedImage ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  // Limpar múltiplas imagens
+                  uploadedImages.forEach(img => URL.revokeObjectURL(img.url));
+                  setUploadedImages([]);
+                }}
+                className="text-xs h-6 px-2"
+              >
+                📷 Uma
+              </Button>
+              <Button
+                type="button"
+                variant={uploadedImages.length > 0 ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  // Limpar imagem única
+                  if (uploadedImage) {
+                    URL.revokeObjectURL(uploadedImage.url);
+                    setUploadedImage(null);
+                  }
+                }}
+                className="text-xs h-6 px-2"
+              >
+                🖼️ Múltiplas
+              </Button>
+            </div>
+
+            {/* Componente de upload baseado na escolha */}
+            {uploadedImages.length > 0 || (!uploadedImage && !uploadedImages.length) ? (
+              <MultipleImageUpload
+                onImagesUpload={handleMultipleImagesUpload}
+                uploadedImages={uploadedImages}
+                onRemoveImage={handleRemoveMultipleImage}
+                disabled={isGenerating}
+                maxImages={4}
+              />
+            ) : (
+              <ImageUpload
+                onImageUpload={handleImageUpload}
+                uploadedImage={uploadedImage}
+                onRemoveImage={handleRemoveImage}
+                disabled={isGenerating}
+              />
+            )}
           </div>
         )}
         
@@ -372,11 +505,13 @@ export function AIImageChat() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder={
-                mode === 'edit' && uploadedImage
-                  ? "Como você quer editar esta imagem?"
+                mode === 'edit' && (uploadedImage || uploadedImages.length > 0)
+                  ? uploadedImages.length > 1 
+                    ? "Como você quer combinar essas imagens?"
+                    : "Como você quer editar esta imagem?"
                   : "Descreva a imagem que você quer criar..."
               }
-              disabled={isGenerating || (mode === 'edit' && !uploadedImage)}
+              disabled={isGenerating || (mode === 'edit' && !uploadedImage && uploadedImages.length === 0)}
               className="neon-border focus:neon-glow"
             />
             
@@ -400,7 +535,7 @@ export function AIImageChat() {
           
           <Button 
             type="submit" 
-            disabled={!inputValue.trim() || isGenerating || (mode === 'edit' && !uploadedImage)}
+            disabled={!inputValue.trim() || isGenerating || (mode === 'edit' && !uploadedImage && uploadedImages.length === 0)}
             variant="gradient"
             size="icon"
             className="shrink-0"
@@ -417,7 +552,10 @@ export function AIImageChat() {
           {mode === 'create' ? (
             <>💡 {enhancePrompt ? 'Com aprimoramento: adiciona termos profissionais automaticamente' : 'Sem aprimoramento: usa exatamente seu prompt'}</>
           ) : (
-            <>✏️ Faça upload de uma imagem e descreva como editá-la. Ex: &ldquo;Remover fundo&rdquo;, &ldquo;Mudar cor para azul&rdquo;</>
+            <>✏️ {uploadedImages.length > 1 
+              ? 'Múltiplas imagens carregadas! Descreva como combiná-las. Ex: &ldquo;Fazer um collage&rdquo;, &ldquo;Mesclar elementos&rdquo;'
+              : 'Faça upload de uma ou múltiplas imagens. Para uma: edite. Para várias: combine/mescle.'
+            }</>
           )}
         </p>
       </div>
