@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,13 +22,84 @@ export function ImageUpload({
   onRemoveImage,
   disabled = false
 }: ImageUploadProps) {
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  // Função para converter imagem para PNG
+  const convertToPNG = useCallback(async (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const htmlImg = document.createElement('img');
+      
+      htmlImg.onload = () => {
+        canvas.width = htmlImg.width;
+        canvas.height = htmlImg.height;
+        
+        // Preenche com fundo transparente
+        ctx!.clearRect(0, 0, canvas.width, canvas.height);
+        ctx!.drawImage(htmlImg, 0, 0);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const pngFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.png'), {
+              type: 'image/png',
+              lastModified: Date.now(),
+            });
+            resolve(pngFile);
+          }
+        }, 'image/png');
+      };
+      
+      htmlImg.src = URL.createObjectURL(file);
+    });
+  }, []);
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      onImageUpload(file, imageUrl);
+      // Converte automaticamente para PNG se não for PNG
+      let processedFile = file;
+      if (file.type !== 'image/png') {
+        processedFile = await convertToPNG(file);
+      }
+      
+      const imageUrl = URL.createObjectURL(processedFile);
+      onImageUpload(processedFile, imageUrl);
     }
-  }, [onImageUpload]);
+  }, [onImageUpload, convertToPNG]);
+
+  // Função para lidar com Ctrl+V
+  const handlePaste = useCallback(async (event: ClipboardEvent) => {
+    if (disabled) return;
+    
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          // Converte automaticamente para PNG se não for PNG
+          let processedFile = file;
+          if (file.type !== 'image/png') {
+            processedFile = await convertToPNG(file);
+          }
+          
+          const imageUrl = URL.createObjectURL(processedFile);
+          onImageUpload(processedFile, imageUrl);
+          event.preventDefault();
+          break;
+        }
+      }
+    }
+  }, [onImageUpload, disabled, convertToPNG]);
+
+  // Adicionar event listener para Ctrl+V
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste);
+    return () => {
+      document.removeEventListener('paste', handlePaste);
+    };
+  }, [handlePaste]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -94,7 +165,7 @@ export function ImageUpload({
           <>
             <ImageIcon className="h-4 w-4 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">
-              Clique ou arraste uma imagem
+              Clique, arraste ou Ctrl+V
             </p>
           </>
         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Image as ImageIcon, X, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,44 @@ export function MultipleImageUpload({
       onImagesUpload([...uploadedImages, ...newImages]);
     }
   }, [onImagesUpload, uploadedImages, maxImages]);
+
+  // Função para lidar com Ctrl+V
+  const handlePaste = useCallback(async (event: ClipboardEvent) => {
+    if (disabled || uploadedImages.length >= maxImages) return;
+    
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/') && imageFiles.length < (maxImages - uploadedImages.length)) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
+        }
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      const newImages: UploadedImage[] = imageFiles.map(file => ({
+        file,
+        url: URL.createObjectURL(file),
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      }));
+      
+      onImagesUpload([...uploadedImages, ...newImages]);
+      event.preventDefault();
+    }
+  }, [onImagesUpload, uploadedImages, disabled, maxImages]);
+
+  // Adicionar event listener para Ctrl+V
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste);
+    return () => {
+      document.removeEventListener('paste', handlePaste);
+    };
+  }, [handlePaste]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -121,7 +159,7 @@ export function MultipleImageUpload({
                   <>
                     <ImageIcon className="h-3 w-3 text-muted-foreground" />
                     <p className="text-xs text-muted-foreground">
-                      Clique ou arraste múltiplas imagens
+                      Clique, arraste ou Ctrl+V múltiplas imagens
                     </p>
                   </>
                 )}

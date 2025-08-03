@@ -3,7 +3,6 @@ export interface ImageGenerationRequest {
   style?: 'vivid' | 'natural';
   quality?: 'standard' | 'hd';
   size?: '1024x1024' | '1792x1024' | '1024x1792';
-  enhancePrompt?: boolean;
 }
 
 export interface ImageEditRequest {
@@ -76,6 +75,33 @@ export async function editImage(request: ImageEditRequest): Promise<GeneratedIma
     return editedImage;
   } catch (error) {
     console.error('Erro ao editar imagem:', error);
+    throw error;
+  }
+}
+
+export async function professionalEditImage(request: ImageEditRequest): Promise<GeneratedImage> {
+  try {
+    const formData = new FormData();
+    formData.append('prompt', request.prompt);
+    formData.append('image', request.image);
+    if (request.size) {
+      formData.append('size', request.size);
+    }
+
+    const response = await fetch('/api/professional-edit', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erro ao editar imagem profissionalmente');
+    }
+
+    const editedImage = await response.json();
+    return editedImage;
+  } catch (error) {
+    console.error('Erro ao editar imagem profissionalmente:', error);
     throw error;
   }
 }

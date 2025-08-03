@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Download, User, Bot, Clock, Sparkles } from "lucide-react";
+import { Download, User, Bot, Clock, Sparkles, Edit3 } from "lucide-react";
 import { GeneratedImage } from "@/lib/openai";
 import Image from "next/image";
 
@@ -15,9 +15,10 @@ export interface ChatMessage {
 interface ChatMessageProps {
   message: ChatMessage;
   onDownloadImage?: (image: GeneratedImage) => void;
+  onEditImage?: (image: GeneratedImage) => void;
 }
 
-export function ChatMessage({ message, onDownloadImage }: ChatMessageProps) {
+export function ChatMessage({ message, onDownloadImage, onEditImage }: ChatMessageProps) {
   const isUser = message.type === 'user';
   const isImage = message.type === 'image';
 
@@ -31,6 +32,12 @@ export function ChatMessage({ message, onDownloadImage }: ChatMessageProps) {
   const handleDownload = () => {
     if (message.image && onDownloadImage) {
       onDownloadImage(message.image);
+    }
+  };
+
+  const handleEdit = () => {
+    if (message.image && onEditImage) {
+      onEditImage(message.image);
     }
   };
 
@@ -71,17 +78,28 @@ export function ChatMessage({ message, onDownloadImage }: ChatMessageProps) {
                   className="rounded-lg max-w-md w-full h-auto neon-border"
                   loading="lazy"
                 />
-                {/* Overlay com botão centralizado */}
+                {/* Overlay com botões centralizados */}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 rounded-lg flex items-center justify-center">
-                  <Button
-                    variant="gradient"
-                    size="lg"
-                    onClick={handleDownload}
-                    className="neon-glow shadow-2xl transform hover:scale-105 transition-transform"
-                  >
-                    <Download className="h-5 w-5 mr-2" />
-                    Baixar PNG
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button
+                      variant="gradient"
+                      size="lg"
+                      onClick={handleEdit}
+                      className="neon-glow shadow-2xl transform hover:scale-105 transition-transform"
+                    >
+                      <Edit3 className="h-5 w-5 mr-2" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="gradient"
+                      size="lg"
+                      onClick={handleDownload}
+                      className="neon-glow shadow-2xl transform hover:scale-105 transition-transform"
+                    >
+                      <Download className="h-5 w-5 mr-2" />
+                      Baixar PNG
+                    </Button>
+                  </div>
                 </div>
                 
                 {/* Indicador de download no canto */}

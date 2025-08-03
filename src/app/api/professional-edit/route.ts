@@ -5,60 +5,51 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export interface ImageGenerationRequest {
-  prompt: string;
-  style?: "vivid" | "natural";
-  quality?: "standard" | "hd";
-  size?: "1024x1024" | "1792x1024" | "1024x1792";
-}
-
-
-
 function generateImageId(): string {
-  return `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  return `edit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ImageGenerationRequest = await request.json();
+    const formData = await request.formData();
+    const prompt = formData.get("prompt") as string;
+    const image = formData.get("image") as File;
+    const size = (formData.get("size") as string) || "1024x1024";
 
-    if (!body.prompt) {
+    if (!prompt || !image) {
       return NextResponse.json(
-        { error: "Prompt é obrigatório" },
+        { error: "Prompt e imagem são obrigatórios" },
         { status: 400 }
       );
     }
 
-    console.log("Prompt original:", body.prompt);
+    console.log("Editando com SEU prompt:", prompt);
 
-    // Usar EXATAMENTE o prompt do usuário sem modificações
-    const finalPrompt = body.prompt;
-
-    const response = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: finalPrompt,
+    // Usar DALL-E 2 diretamente com SEU prompt exato
+    const response = await openai.images.edit({
+      model: "gpt-4o",
+      image: image,
+      prompt: prompt, // SEU prompt exato, sem modificações
       n: 1,
-      size: body.size || "1024x1024",
-      quality: body.quality || "hd",
-      style: body.style || "vivid",
+      size: size as "256x256" | "512x512" | "1024x1024",
     });
 
     const imageUrl = response.data?.[0]?.url;
     if (!imageUrl) {
-      throw new Error("Nenhuma imagem foi gerada");
+      throw new Error("Nenhuma imagem editada foi gerada");
     }
 
-    const generatedImage = {
+    const editedImage = {
       id: generateImageId(),
       url: imageUrl,
-      prompt: body.prompt, // Prompt original do usuário
-      revisedPrompt: response.data?.[0]?.revised_prompt, // Prompt final usado pela OpenAI
+      prompt: prompt, // SEU prompt original
       timestamp: Date.now(),
+      isEdit: true,
     };
 
-    return NextResponse.json(generatedImage);
+    return NextResponse.json(editedImage);
   } catch (error) {
-    console.error("Erro na API de geração de imagem:", error);
+    console.error("Erro na edição:", error);
 
     if (error instanceof Error) {
       if (error.message.includes("content_policy_violation")) {
@@ -82,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Erro interno do servidor ao gerar imagem" },
+      { error: "Erro interno do servidor ao editar imagem" },
       { status: 500 }
     );
   }

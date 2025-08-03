@@ -44,11 +44,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (imageFiles.length < 2) {
+    if (imageFiles.length < 1) {
       return NextResponse.json(
-        { error: "Pelo menos 2 imagens são necessárias para combinação" },
+        { error: "Pelo menos 1 imagem é necessária" },
         { status: 400 }
       );
+    }
+
+    console.log("✏️ Editando imagem preservando conteúdo original...");
+
+    // Se for apenas uma imagem, usar edição direta
+    if (imageFiles.length === 1) {
+      const imageFile = imageFiles[0];
+
+      console.log("📝 Editando imagem única com prompt:", prompt);
+
+      // Usar edição direta do GPT-4o (preserva a imagem base)
+      const response = await openai.images.edit({
+        model: "gpt-4o",
+        image: imageFile,
+        prompt: prompt, // Usa EXATAMENTE o prompt do usuário
+        n: 1,
+        size: "1024x1024",
+      });
+
+      const imageUrl = response.data?.[0]?.url;
+      if (!imageUrl) throw new Error("Nenhuma imagem foi gerada");
+
+      return NextResponse.json({
+        id: generateImageId(),
+        url: imageUrl,
+        prompt: prompt,
+        timestamp: Date.now(),
+        isCombination: false,
+        isEdit: true,
+        sourceImageCount: 1,
+      });
     }
 
     console.log("Analisando", imageFiles.length, "imagens para combinação...");
@@ -143,7 +174,7 @@ Return only the prompt, no explanation.`,
 
     // Gerar a imagem combinada
     const response = await openai.images.generate({
-      model: "dall-e-3",
+      model: "gpt-4o",
       prompt: enhancedPrompt,
       n: 1,
       size: "1024x1024",

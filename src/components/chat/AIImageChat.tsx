@@ -8,7 +8,7 @@ import { ChatMessage, ChatMessage as ChatMessageComponent } from "./ChatMessage"
 import { ImageUpload } from "./ImageUpload";
 import { MultipleImageUpload } from "./MultipleImageUpload";
 import { ExamplePrompts } from "./ExamplePrompts";
-import { generateImage, editImage, combineImages, downloadImage, GeneratedImage } from "@/lib/openai";
+import { generateImage, professionalEditImage, combineImages, downloadImage, GeneratedImage } from "@/lib/openai";
 import { chatStorage } from "@/lib/storage";
 
 interface UploadedImage {
@@ -33,7 +33,6 @@ export function AIImageChat() {
   const [uploadedImage, setUploadedImage] = useState<{ file: File; url: string } | null>(null);
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [mode, setMode] = useState<'create' | 'edit'>('create');
-  const [enhancePrompt, setEnhancePrompt] = useState(false);
   const [hasStoredMessages, setHasStoredMessages] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -104,8 +103,8 @@ export function AIImageChat() {
             type: "assistant",
             content: isEditMode
                 ? hasMultipleImages
-                    ? "🔍 Analisando suas imagens com IA... Identificando elementos visuais e criando uma combinação profissional!"
-                    : "🎨 Editando sua imagem... Aplicando as alterações solicitadas!"
+                    ? "� ANÁLISE ULTRA-DETALHADA: Analisando características físicas, iluminação e composição... Criando combinação FOTORREALISTA preservando TODOS os detalhes originais!"
+                    : "🎨 EDIÇÃO PROFISSIONAL: Analisando sua imagem com precisão... Aplicando modificações mantendo autenticidade fotográfica!"
                 : "🎨 Criando sua imagem... Isso pode levar alguns segundos para garantir a melhor qualidade!",
         });
 
@@ -126,8 +125,8 @@ export function AIImageChat() {
                 setUploadedImages([]);
                 setMode('create');
             } else if (isEditMode && uploadedImage) {
-                // Edita a imagem existente
-                result = await editImage({
+                // Edita a imagem existente com IA profissional
+                result = await professionalEditImage({
                     prompt: userMessage,
                     image: uploadedImage.file,
                     size: "1024x1024"
@@ -143,8 +142,7 @@ export function AIImageChat() {
                     prompt: userMessage,
                     quality: "hd",
                     style: "vivid",
-                    size: "1024x1024",
-                    enhancePrompt: enhancePrompt
+                    size: "1024x1024"
                 });
             }
 
@@ -233,7 +231,76 @@ export function AIImageChat() {
       
       console.error("Erro ao baixar imagem:", error);
     }
-  };    const handleImageUpload = (file: File, imageUrl: string) => {
+  };
+
+  const handleEditImage = async (image: GeneratedImage) => {
+    try {
+      addMessage({
+        type: "assistant",
+        content: `🔄 Preparando imagem para edição...`,
+      });
+
+      let file: File;
+      let imageUrl: string;
+
+      // Tentar converter URL da imagem para File
+      try {
+        const response = await fetch(image.url, {
+          mode: 'cors',
+          cache: 'no-cache'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        file = new File([blob], `${image.id}.png`, { type: 'image/png' });
+        imageUrl = URL.createObjectURL(file);
+      } catch (fetchError) {
+        // Se falhar o fetch da URL, tentar usar a imagem original se disponível
+        if (image.originalImage) {
+          const response = await fetch(image.originalImage);
+          const blob = await response.blob();
+          file = new File([blob], `${image.id}_original.png`, { type: 'image/png' });
+          imageUrl = URL.createObjectURL(file);
+        } else {
+          throw new Error(`Não foi possível acessar a imagem: ${fetchError instanceof Error ? fetchError.message : 'URL inacessível'}`);
+        }
+      }
+      
+      // Configurar para modo de edição
+      setUploadedImage({ file, url: imageUrl });
+      setMode('edit');
+
+      // Atualizar a última mensagem
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage.content.includes('Preparando imagem')) {
+          lastMessage.content = `🎨 Imagem selecionada para edição profissional! Digite suas modificações:\n\n**Exemplos de comandos:**\n• "Alterar o fundo para [descrição detalhada]"\n• "Mudar a cor para [cor específica]"\n• "Adicionar [elemento específico]"\n• "Remover [elemento específico]"\n• "Alterar o estilo para [estilo específico]"\n• "Melhorar a iluminação"\n• "Tornar mais realista"\n\n💡 **Dica:** Seja específico para obter resultados profissionais!`;
+        }
+        return newMessages;
+      });
+
+      // Scroll para o input
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    } catch (error) {
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage.content.includes('Preparando imagem')) {
+          lastMessage.content = `❌ Erro ao preparar imagem para edição: ${error instanceof Error ? error.message : 'Erro desconhecido'}\n\n💡 Tente fazer upload da imagem novamente ou usar uma imagem diferente.`;
+        }
+        return newMessages;
+      });
+      console.error("Erro ao preparar imagem para edição:", error);
+    }
+  };
+  
+  const handleImageUpload = (file: File, imageUrl: string) => {
         setUploadedImage({ file, url: imageUrl });
         setMode('edit');
 
@@ -420,6 +487,7 @@ export function AIImageChat() {
               key={message.id}
               message={message}
               onDownloadImage={handleDownloadImage}
+              onEditImage={handleEditImage}
             />
           ))}
           
@@ -514,23 +582,6 @@ export function AIImageChat() {
               disabled={isGenerating || (mode === 'edit' && !uploadedImage && uploadedImages.length === 0)}
               className="neon-border focus:neon-glow"
             />
-            
-            {/* Toggle para aprimoramento de prompt - só no modo criar */}
-            {mode === 'create' && (
-              <div className="flex items-center gap-2 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={enhancePrompt}
-                    onChange={(e) => setEnhancePrompt(e.target.checked)}
-                    className="w-3 h-3 rounded border border-border"
-                  />
-                  <span className="text-muted-foreground">
-                    🚀 Aprimorar prompt automaticamente
-                  </span>
-                </label>
-              </div>
-            )}
           </div>
           
           <Button 
@@ -550,11 +601,11 @@ export function AIImageChat() {
         
         <p className="text-xs text-muted-foreground text-center">
           {mode === 'create' ? (
-            <>💡 {enhancePrompt ? 'Com aprimoramento: adiciona termos profissionais automaticamente' : 'Sem aprimoramento: usa exatamente seu prompt'}</>
+            <>🎯 Usa exatamente seu prompt sem modificações</>
           ) : (
             <>✏️ {uploadedImages.length > 1 
-              ? 'Múltiplas imagens carregadas! Descreva como combiná-las. Ex: &ldquo;Fazer um collage&rdquo;, &ldquo;Mesclar elementos&rdquo;'
-              : 'Faça upload de uma ou múltiplas imagens. Para uma: edite. Para várias: combine/mescle.'
+              ? 'Múltiplas imagens carregadas! Descreva a modificação que quer aplicar. O ambiente e elementos originais serão preservados.'
+              : 'Imagem carregada! Descreva exatamente a modificação que quer fazer. O ambiente original será preservado.'
             }</>
           )}
         </p>
