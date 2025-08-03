@@ -13,8 +13,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const prompt = formData.get("prompt") as string;
-    const imageFile = formData.get("image") as File;
-    const size = (formData.get("size") as string) || "1024x1024";
+    const image = formData.get("image") as File;
 
     if (!prompt) {
       return NextResponse.json(
@@ -23,38 +22,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!imageFile) {
-      return NextResponse.json(
-        { error: "Imagem é obrigatória" },
-        { status: 400 }
-      );
+    if (!image) {
+        return NextResponse.json(
+            { error: "Imagem é obrigatória" },
+            { status: 400 }
+        );
     }
 
     // Verifica o tipo de arquivo
-    if (!imageFile.type.startsWith("image/")) {
-      return NextResponse.json(
-        { error: "Arquivo deve ser uma imagem" },
-        { status: 400 }
-      );
+    if (!image.type.startsWith("image/")) {
+        return NextResponse.json(
+            { error: "Arquivo deve ser uma imagem" },
+            { status: 400 }
+        );
     }
 
     // Verifica o tamanho do arquivo (máximo 4MB)
-    if (imageFile.size > 4 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: "Imagem deve ter no máximo 4MB" },
-        { status: 400 }
-      );
+    if (image.size > 4 * 1024 * 1024) {
+        return NextResponse.json(
+            { error: "Imagem deve ter no máximo 4MB" },
+            { status: 400 }
+        );
     }
 
     // Usar EXATAMENTE o prompt do usuário sem modificações
     console.log("Prompt de edição:", prompt);
 
     const response = await openai.images.edit({
-      model: "gpt-4o", // Modelo correto para edição de imagens
-      image: imageFile,
-      prompt: prompt, // Prompt original do usuário
+      image: image,
+      prompt: prompt,
       n: 1,
-      size: size as "1024x1024" | "512x512" | "256x256",
+      size: "1024x1024",
     });
 
     const imageUrl = response.data?.[0]?.url;

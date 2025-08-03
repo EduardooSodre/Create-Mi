@@ -21,66 +21,32 @@ function generateImageId(): string {
 export async function POST(request: NextRequest) {
   try {
     const body: ImageGenerationRequest = await request.json();
-
     if (!body.prompt) {
       return NextResponse.json(
         { error: "Prompt é obrigatório" },
         { status: 400 }
       );
     }
-
-    console.log("Prompt original:", body.prompt);
-
-    // Usar EXATAMENTE o prompt do usuário sem modificações
-    const finalPrompt = body.prompt;
-
+    // Envia apenas o prompt puro do usuário para o DALL-E 3
     const response = await openai.images.generate({
       model: "dall-e-3",
-      prompt: finalPrompt,
+      prompt: body.prompt,
       n: 1,
       size: body.size || "1024x1024",
       quality: body.quality || "hd",
       style: body.style || "vivid",
     });
-
     const imageUrl = response.data?.[0]?.url;
-    if (!imageUrl) {
-      throw new Error("Nenhuma imagem foi gerada");
-    }
-
-    const generatedImage = {
+    if (!imageUrl) throw new Error("Nenhuma imagem foi gerada");
+    return NextResponse.json({
       id: generateImageId(),
       url: imageUrl,
-      prompt: body.prompt, // Prompt original do usuário
-      revisedPrompt: response.data?.[0]?.revised_prompt, // Prompt final usado pela OpenAI
+      prompt: body.prompt,
+      revisedPrompt: response.data?.[0]?.revised_prompt || body.prompt,
       timestamp: Date.now(),
-    };
-
-    return NextResponse.json(generatedImage);
+    });
   } catch (error) {
-    console.error("Erro na API de geração de imagem:", error);
-
-    if (error instanceof Error) {
-      if (error.message.includes("content_policy_violation")) {
-        return NextResponse.json(
-          {
-            error:
-              "O conteúdo solicitado não atende às políticas de uso. Tente uma descrição diferente.",
-          },
-          { status: 400 }
-        );
-      }
-      if (error.message.includes("rate_limit_exceeded")) {
-        return NextResponse.json(
-          {
-            error:
-              "Limite de requisições excedido. Tente novamente em alguns momentos.",
-          },
-          { status: 429 }
-        );
-      }
-    }
-
+    console.error("Erro interno do servidor ao gerar imagem:", error);
     return NextResponse.json(
       { error: "Erro interno do servidor ao gerar imagem" },
       { status: 500 }
